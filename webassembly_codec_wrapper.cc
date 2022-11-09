@@ -303,10 +303,97 @@ int main(int argc, char* argv[]) {
   return 0;
 }
 
+std::vector<uint8_t> EncodeWithLyra2(uintptr_t data, uint64_t num_samples, uint32_t sample_rate_hz) {
+  // Select encoder to use.
+  chromemedia::codec::LyraEncoder* encoder_to_use = nullptr;
+  switch (sample_rate_hz) {
+    case 8000:
+      encoder_to_use = encoder_8khz.get();
+      break;
+    case 16000:
+      encoder_to_use = encoder_16khz.get();
+      break;
+    case 32000:
+      encoder_to_use = encoder_32khz.get();
+      break;
+    case 48000:
+      encoder_to_use = encoder.get();
+      break;
+    default: {
+      fprintf(stderr, "Unsupported sample rate: %d", sample_rate_hz);
+      return std::vector<uint8_t>();
+    }
+  }
+  // Convert the float input data to int16_t.
+  float* data_ptr = reinterpret_cast<float*>(data);
+  std::vector<int16_t> data_to_encode(num_samples);
+  for (int i = 0; i < num_samples; i++) {
+    data_to_encode[i] = static_cast<int16_t>(data_ptr[i] * 32767.0f);
+  }
+
+  // Encode the input audio.
+  auto maybe_encoded_data = chromemedia::codec::EncodeWithEncoder(
+      encoder_to_use, data_to_encode, sample_rate_hz);
+  if (!maybe_encoded_data.has_value()) {
+    fprintf(stderr, "Failed to encode audio.\n");
+    return std::vector<uint8_t>();
+  }
+
+  return maybe_encoded_data.value();
+}
+
+bool DecodeWithLyra2(emscripten::val encoded_data, uint32_t sample_rate_hz, uintptr_t output) {
+  // Select decoder to use.
+  chromemedia::codec::LyraDecoder* decoder_to_use = nullptr;
+  switch (sample_rate_hz) {
+    case 8000:
+      decoder_to_use = decoder_8khz.get();
+      break;
+    case 16000:
+      decoder_to_use = decoder_16khz.get();
+      break;
+    case 32000:
+      decoder_to_use = decoder_32khz.get();
+      break;
+    case 48000:
+      decoder_to_use = decoder.get();
+      break;
+    default: {
+      fprintf(stderr, "Unsupported sample rate: %d", sample_rate_hz);
+      return false;
+    }
+  }
+
+  std::vector<uint8_t> data_to_decode = emscripten::convertJSArrayToNumberVector<uint8_t>(encoded_data);
+
+  auto maybe_decoded_output = chromemedia::codec::DecodeWithDecoder(
+      decoder_to_use, data_to_decode, /*packet_loss_rate=*/0.f,
+      /*float_average_burst_length=*/1.f, /*bitrate=*/3200);
+  if (!maybe_decoded_output.has_value()) {
+    fprintf(stderr, "Failed to decode audio.\n");
+    return false;
+  }
+
+  // Copy the decoded data to the output buffer.
+  const std::vector<int16_t>& decoded_output = maybe_decoded_output.value();
+  const int num_decoded_samples = decoded_output.size();
+  float* output_ptr = reinterpret_cast<float*>(output);
+  for (int i = 0; i < num_decoded_samples; i++) {
+    output_ptr[i] = static_cast<float>(decoded_output[i] / 32767.0f);
+  }
+
+  return true;
+}
+
 EMSCRIPTEN_BINDINGS(module) {
   emscripten::function("isCodecReady", IsCodecReady);
   emscripten::function("encodeAndDecode", EncodeAndDecodeWithLyra,
                        emscripten::allow_raw_pointers());
   emscripten::function("encodeWithLyra", EncodeWithLyra, emscripten::allow_raw_pointers());
   emscripten::function("decodeWithLyra", DecodeWithLyra, emscripten::allow_raw_pointers());
+
+  emscripten::function("encodeWithLyra2", EncodeWithLyra2, emscripten::allow_raw_pointers());
+  emscripten::function("decodeWithLyra2", DecodeWithLyra2, emscripten::allow_raw_pointers());
+
+  emscripten::register_vector<uint8_t>("vector<uint8_t>");
 }
