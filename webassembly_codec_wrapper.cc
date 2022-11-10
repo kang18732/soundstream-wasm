@@ -303,7 +303,7 @@ int main(int argc, char* argv[]) {
   return 0;
 }
 
-std::vector<uint8_t> EncodeWithLyra2(uintptr_t data, uint64_t num_samples, uint32_t sample_rate_hz) {
+std::vector<uint8_t> EncodeWithLyra2(uintptr_t data, uint32_t num_samples, uint32_t sample_rate_hz) {
   // Select encoder to use.
   chromemedia::codec::LyraEncoder* encoder_to_use = nullptr;
   switch (sample_rate_hz) {
